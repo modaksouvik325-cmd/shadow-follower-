@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Shadow Swarm</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #050208;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgba(200, 50, 80, 0.7);
+            pointer-events: none;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-layer">The Shadow Swarm <br><span style="font-size: 10px; color: #555;">Click/Tap to trigger hive blink</span></div>
+    <canvas id="mainCanvas"></canvas>
+
+<script>
+/**
+ * THE SHADOW SWARM
+ * Eldritch Generative Typography Canvas
+ */
+
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+let width, height;
+let mouseX = 0, mouseY = 0;
+let isInteracting = false;
+
+// Thematic Vocabulary
+const SHADOW_WORDS = [
+    "devour", "hollow", "sever", "unseen", "glare", "vessel", "abyss", 
+    "contain", "hunger", "watch", "prey", "pride", "shadow", "teeth",
+    "weep", "consume", "void", "stare", "lurker", "sunder", "shatter"
+];
+
+// Color Palette
+const PALETTE = {
+    bg: '#050208',
+    voidText: ['rgba(24, 12, 30, 0.5)', 'rgba(32, 16, 36, 0.4)', 'rgba(45, 20, 50, 0.3)'],
+    sclera: ['rgba(40, 15, 25, 0.8)', 'rgba(55, 20, 35, 0.6)', 'rgba(30, 10, 15, 0.9)'],
+    irisOuter: ['#780a1e', '#960028', '#500514'],
+    irisMid: ['#dc143c', '#c80a32', '#b40028'],
+    irisInner: ['#ff3c64', '#ff2850', '#ff5078'],
+    mawTeeth: ['rgba(200, 200, 220, 0.6)', 'rgba(180, 10, 30, 0.5)', 'rgba(120, 120, 140, 0.6)']
+};
+
+// Utilities
+const randomRange = (min, max) => Math.random() * (max - min) + min;
+const randomChoice = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// Pre-rendered canvases for performance
+const bgCanvas = document.createElement('canvas');
+const bgCtx = bgCanvas.getContext('2d');
+const masterEyeCanvas = document.createElement('canvas');
+const eyeCtx = masterEyeCanvas.getContext('2d');
+const MASTER_EYE_SIZE = 400;
+
+// Entities
+let swarm = [];
+
+function init() {
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; isInteracting = true; });
+    window.addEventListener('touchmove', (e) => { mouseX = e.touches[0].clientX; mouseY = e.touches[0].clientY; isInteracting = true; }, {passive: true});
+    window.addEventListener('click', triggerHiveBlink);
+    window.addEventListener('touchstart', triggerHiveBlink, {passive: true});
+    
+    resize();
+    buildMasterEye();
+    spawnSwarm();
+    
+    requestAnimationFrame(animate);
+}
+
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    if(!isInteracting) {
+        mouseX = width / 2;
+        mouseY = height / 2;
+    }
+    generateBackground();
+}
+
+/**
+ * Generates the static void text background with a "maw" at the bottom.
+ */
+function generateBackground() {
+    bgCanvas.width = width;
+    bgCanvas.height = height;
+    
+    bgCtx.fillStyle = PALETTE.bg;
+    bgCtx.fillRect(0, 0, width, height);
+    
+    // Background creeping text
+    for (let i = 0; i < 300; i++) {
+        const x = randomRange(0, width);
+        const y = randomRange(0, height);
+        const fontSize = randomRange(10, 32);
+        const angle = randomRange(-Math.PI/6, Math.PI/6);
+        
+        bgCtx.save();
+        bgCtx.translate(x, y);
+        bgCtx.rotate(angle);
+        bgCtx.fillStyle = randomChoice(PALETTE.voidText);
+        bgCtx.font = `bold ${fontSize}px Arial`;
+        bgCtx.fillText(randomChoice(SHADOW_WORDS), 0, 0);
+        bgCtx.restore();
+    }
+    
+    // Bottom Maw Text
+    for (let i = 0; i < 50; i++) {
+        const u = (i / 49) * 2 - 1; // -1 to 1
+        const x = width/2 + u * (width * 0.45);
+        const y = height - 20 + (u*u) * 100;
+        const fontSize = randomRange(16, 40);
+        
+        bgCtx.save();
+        bgCtx.translate(x, y);
+        bgCtx.rotate(randomRange(-0.2, 0.2));
+        bgCtx.fillStyle = randomChoice(PALETTE.mawTeeth);
+        bgCtx.font = `bold ${fontSize}px Arial`;
+        bgCtx.fillText("consume", 0, 0);
+        bgCtx.restore();
+    }
+}
+
+/**
+ * Pre-renders the complex text-based eye (Sclera + Iris + Pupil)
+ */
+function buildMasterEye() {
+    masterEyeCanvas.width = MASTER_EYE_SIZE;
+    masterEyeCanvas.height = MASTER_EYE_SIZE;
+    const center = MASTER_EYE_SIZE / 2;
+    const eyeHalfW = MASTER_EYE_SIZE * 0.45;
+    const eyeHalfH = MASTER_EYE_SIZE * 0.35;
+    
+    // Dark base for sclera
+    eyeCtx.fillStyle = 'rgba(20, 5, 10, 1)';
+    eyeCtx.beginPath();
+    eyeCtx.ellipse(center, center, eyeHalfW, eyeHalfH, 0, 0, Math.PI * 2);
+    eyeCtx.fill();
+    
+    // Sclera Text
+    for (let i = 0; i < 150; i++) {
+        const u = randomRange(-0.9, 0.9);
+        const v = randomRange(-0.9, 0.9);
+        if (u*u + v*v > 1) continue;
+        
+        const x = center + u * eyeHalfW;
+        const y = center + v * eyeHalfH;
+        
+        eyeCtx.save();
+        eyeCtx.translate(x, y);
+        eyeCtx.rotate(randomRange(-0.2, 0.2));
+        eyeCtx.fillStyle = randomChoice(PALETTE.sclera);
+        eyeCtx.font = `bold ${Math.floor(randomRange(10, 18))}px Arial`;
+        eyeCtx.fillText(randomChoice(SHADOW_WORDS), 0, 0);
+        eyeCtx.restore();
+    }
+    
+    // Iris Base
+    const irisRad = eyeHalfH * 0.85;
+    eyeCtx.fillStyle = 'rgba(10, 0, 0, 1)';
+    eyeCtx.beginPath();
+    eyeCtx.arc(center, center, irisRad, 0, Math.PI * 2);
+    eyeCtx.fill();
+    
+    // Radial Iris Spokes (Text)
+    for (let i = 0; i < 180; i++) {
+        const angle = randomRange(0, Math.PI * 2);
+        const r = randomRange(0.3, 0.95) * irisRad;
+        const x = center + Math.cos(angle) * r;
+        const y = center + Math.sin(angle) * r;
+        const word = randomChoice(SHADOW_WORDS);
+        const col = r > irisRad * 0.6 ? randomChoice(PALETTE.irisOuter) : randomChoice(PALETTE.irisMid);
+        
+        eyeCtx.save();
+        eyeCtx.translate(x, y);
+        eyeCtx.rotate(angle); // Radiate outwards
+        eyeCtx.fillStyle = col;
+        eyeCtx.font = `bold ${Math.floor(randomRange(9, 14))}px Arial`;
+        eyeCtx.fillText(word, 0, 0);
+        eyeCtx.restore();
+    }
+    
+    // Inner Luminous Ring
+    for (let i = 0; i < 50; i++) {
+        const angle = randomRange(0, Math.PI * 2);
+        const r = randomRange(0.2, 0.45) * irisRad;
+        
+        eyeCtx.save();
+        eyeCtx.translate(center + Math.cos(angle) * r, center + Math.sin(angle) * r);
+        eyeCtx.rotate(angle);
+        eyeCtx.fillStyle = randomChoice(PALETTE.irisInner);
+        eyeCtx.font = `bold ${Math.floor(randomRange(12, 16))}px Arial`;
+        eyeCtx.fillText("flare", 0, 0);
+        eyeCtx.restore();
+    }
+    
+    // Pupil Cutout
+    const pupilRad = irisRad * 0.35;
+    eyeCtx.fillStyle = '#000000';
+    eyeCtx.beginPath();
+    eyeCtx.arc(center, center, pupilRad, 0, Math.PI * 2);
+    eyeCtx.fill();
+}
+
+/**
+ * Eye Instance Class
+ */
+class SwarmEye {
+    constructor(isCenter = false) {
+        this.isCenter = isCenter;
+        this.scale = isCenter ? randomRange(1.2, 1.8) : randomRange(0.2, 0.7);
+        this.x = isCenter ? width / 2 : randomRange(width * 0.1, width * 0.9);
+        this.y = isCenter ? height / 2 - 50 : randomRange(height * 0.1, height * 0.85);
+        this.baseAngle = isCenter ? randomRange(-0.05, 0.05) : randomRange(-0.5, 0.5);
+        
+        this.gazeX = 0;
+        this.gazeY = 0;
+        this.targetGazeX = 0;
+        this.targetGazeY = 0;
+        
+        this.nextSaccade = Date.now() + randomRange(200, 1500);
+        
+        // Blink mechanics
+        this.openness = 1.0; 
+        this.blinkState = 'IDLE'; // IDLE, CLOSING, CLOSED, OPENING
+        this.blinkTimer = 0;
+        this.nextBlink = Date.now() + randomRange(1000, 5000);
+    }
+    
+    triggerBlink(delay = 0) {
+        if(this.blinkState === 'IDLE') {
+            setTimeout(() => {
+                this.blinkState = 'CLOSING';
+                this.blinkTimer = Date.now();
+            }, delay);
+        }
+    }
+    
+    update(now, dt) {
+        // Gaze Saccades
+        if (now > this.nextSaccade) {
+            if (Math.random() < 0.3 || this.isCenter) {
+                // Look at cursor
+                const dx = mouseX - this.x;
+                const dy = mouseY - this.y;
+                const dist = Math.hypot(dx, dy);
+                if(dist > 0) {
+                    this.targetGazeX = (dx / dist) * 35.0; // Max gaze offset
+                    this.targetGazeY = (dy / dist) * 25.0;
+                }
+            } else {
+                // Erratic wandering
+                this.targetGazeX = randomRange(-30, 30);
+                this.targetGazeY = randomRange(-20, 20);
+            }
+            this.nextSaccade = now + randomRange(200, 1500);
+        }
+        
+        // Smooth gaze
+        this.gazeX += (this.targetGazeX - this.gazeX) * 0.1;
+        this.gazeY += (this.targetGazeY - this.gazeY) * 0.1;
+        
+        // Blink logic
+        if (this.blinkState === 'IDLE') {
+            if (now > this.nextBlink) this.triggerBlink();
+        } else {
+            const elapsed = now - this.blinkTimer;
+            const tClose = 100;
+            const tHold = 50;
+            const tOpen = 250;
+            
+            if (this.blinkState === 'CLOSING') {
+                this.openness = Math.max(0, 1.0 - (elapsed / tClose));
+                if (elapsed >= tClose) {
+                    this.blinkState = 'CLOSED';
+                    this.blinkTimer = now;
+                }
+            } else if (this.blinkState === 'CLOSED') {
+                this.openness = 0;
+                if (elapsed >= tHold) {
+                    this.blinkState = 'OPENING';
+                    this.blinkTimer = now;
+                }
+            } else if (this.blinkState === 'OPENING') {
+                this.openness = Math.min(1.0, elapsed / tOpen);
+                if (elapsed >= tOpen) {
+                    this.blinkState = 'IDLE';
+                    this.nextBlink = now + randomRange(1500, 6000);
+                }
+            }
+        }
+    }
+    
+    draw(ctx) {
+        if (this.openness <= 0.01) return; // Fully closed
+        
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.scale, this.scale);
+        ctx.rotate(this.baseAngle);
+        
+        const hw = MASTER_EYE_SIZE * 0.48; // Half-width for mask
+        const hh = MASTER_EYE_SIZE * 0.35; // Half-height for mask
+        
+        // Create Predatory Eyelid Clipping Path
+        ctx.beginPath();
+        // Left Corner
+        ctx.moveTo(-hw, 0);
+        
+        // Top Eyelid Curve (Sharper quad curve when open, flattened when closed)
+        const ctrlY_Top = -hh * 1.5 * this.openness;
+        ctx.quadraticCurveTo(0, ctrlY_Top, hw, 0);
+        
+        // Bottom Eyelid Curve
+        const ctrlY_Bot = hh * 1.5 * this.openness;
+        ctx.quadraticCurveTo(0, ctrlY_Bot, -hw, 0);
+        
+        ctx.clip(); // Apply Eyelid Mask
+        
+        // Draw Master Eye, offset by gaze
+        const offsetSize = MASTER_EYE_SIZE/2;
+        ctx.drawImage(masterEyeCanvas, -offsetSize + this.gazeX, -offsetSize + this.gazeY);
+        
+        // Draw predatory rim highlight (inside the mask context, or outline it)
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = `rgba(255, 60, 100, ${this.openness * 0.5})`;
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+function spawnSwarm() {
+    swarm = [];
+    swarm.push(new SwarmEye(true)); // Master central eye
+    for (let i = 0; i < 15; i++) {
+        swarm.push(new SwarmEye());
+    }
+    // Sort so smaller eyes are drawn first (background)
+    swarm.sort((a, b) => a.scale - b.scale);
+}
+
+function triggerHiveBlink() {
+    swarm.forEach(eye => {
+        eye.triggerBlink(randomRange(0, 150));
+    });
+}
+
+// Main Render Loop
+let lastTime = Date.now();
+function animate() {
+    const now = Date.now();
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+    
+    // Draw pre-rendered background
+    ctx.drawImage(bgCanvas, 0, 0);
+    
+    // Update and draw eyes
+    for (const eye of swarm) {
+        eye.update(now, dt);
+        eye.draw(ctx);
+    }
+    
+    requestAnimationFrame(animate);
+}
+
+// Boot
+init();
+
+</script>
+</body>
+</html>
